@@ -496,19 +496,33 @@ rg_close(gint argc, VALUE *argv, VALUE self)
     return self;
 }
 
-static VALUE
-rg_create_watch(VALUE self, VALUE condition)
-{
-    return BOXED2RVAL(g_io_create_watch(_SELF(self), NUM2INT(condition)), 
-                      G_TYPE_SOURCE);
-}
-
 static gboolean
 io_func(GIOChannel *source, GIOCondition condition, gpointer func)
 {
     return RVAL2CBOOL(rb_funcall((VALUE)func, id_call, 2, 
                             BOXED2RVAL(source, G_TYPE_IO_CHANNEL), 
                             INT2NUM(condition)));
+}
+
+static VALUE
+rg_create_watch(int argc, VALUE *argv, VALUE self)
+{
+    VALUE condition, callback;
+
+    rb_scan_args(argc, argv, "10&", &condition, &callback);
+
+    GSource *source = g_io_create_watch(_SELF(self), NUM2INT(condition));
+
+    VALUE boxed_source = BOXED2RVAL(source, G_TYPE_SOURCE);
+    if (!NIL_P(callback)) {
+        G_RELATIVE(boxed_source, callback);
+        g_source_set_callback(source,
+                              (GSourceFunc)io_func,
+                              (gpointer)callback,
+                              (GDestroyNotify)NULL);
+    }
+
+    return boxed_source;
 }
 
 static VALUE
@@ -781,7 +795,7 @@ Init_glib_io_channel(void)
     RG_DEF_METHOD(seek, -1);
     RG_DEF_METHOD(set_pos, 1);
     RG_DEF_METHOD(close, -1);
-    RG_DEF_METHOD(create_watch, 1);
+    RG_DEF_METHOD(create_watch, -1);
     RG_DEF_METHOD(add_watch, 1);
     RG_DEF_METHOD(buffer_size, 0);
     RG_DEF_METHOD(set_buffer_size, 1);
