@@ -137,6 +137,12 @@ source_current_source(G_GNUC_UNUSED VALUE self)
 }
 
 static gboolean
+source_func(gpointer func)
+{
+    return RVAL2CBOOL(rb_funcall((VALUE)func, id_call, 0));
+}
+
+static gboolean
 invoke_source_func(gpointer data)
 {
     callback_info_t *info = (callback_info_t *)data;
@@ -395,15 +401,45 @@ rg_s_depth(G_GNUC_UNUSED VALUE self)
 #endif
 
 static VALUE
-timeout_source_new(G_GNUC_UNUSED VALUE self, VALUE interval)
+timeout_source_new(int argc, VALUE *argv, G_GNUC_UNUSED VALUE self)
 {
-    return BOXED2RVAL(g_timeout_source_new(NUM2UINT(interval)), G_TYPE_SOURCE);
+    VALUE interval, callback;
+
+    rb_scan_args(argc, argv, "10&", &interval, &callback);
+
+    GSource *source = g_timeout_source_new(NUM2UINT(interval));
+
+    VALUE boxed_source = BOXED2RVAL(source, G_TYPE_SOURCE);
+    if (!NIL_P(callback)) {
+        G_RELATIVE(boxed_source, callback);
+        g_source_set_callback(source,
+                              (GSourceFunc)source_func,
+                              (gpointer)callback,
+                              (GDestroyNotify)NULL);
+    }
+
+    return boxed_source;
 }
 #if GLIB_CHECK_VERSION(2,14,0)
 static VALUE
-timeout_source_new_seconds(G_GNUC_UNUSED VALUE self, VALUE interval)
+timeout_source_new_seconds(int argc, VALUE *argv, G_GNUC_UNUSED VALUE self)
 {
-    return BOXED2RVAL(g_timeout_source_new_seconds(NUM2UINT(interval)), G_TYPE_SOURCE);
+    VALUE interval, callback;
+
+    rb_scan_args(argc, argv, "10&", &interval, &callback);
+
+    GSource *source = g_timeout_source_new_seconds(NUM2UINT(interval));
+
+    VALUE boxed_source = BOXED2RVAL(source, G_TYPE_SOURCE);
+    if (!NIL_P(callback)) {
+        G_RELATIVE(boxed_source, callback);
+        g_source_set_callback(source,
+                              (GSourceFunc)source_func,
+                              (gpointer)callback,
+                              (GDestroyNotify)NULL);
+    }
+
+    return boxed_source;
 }
 #endif
 
@@ -458,9 +494,24 @@ timeout_add_seconds(int argc, VALUE *argv, G_GNUC_UNUSED VALUE self)
 #endif
 
 static VALUE
-idle_source_new(G_GNUC_UNUSED VALUE self)
+idle_source_new(int argc, VALUE *argv, G_GNUC_UNUSED VALUE self)
 {
-    return BOXED2RVAL(g_idle_source_new(), G_TYPE_SOURCE);
+    VALUE callback;
+
+    rb_scan_args(argc, argv, "00&", &callback);
+
+    GSource *source = g_idle_source_new();
+
+    VALUE boxed_source = BOXED2RVAL(source, G_TYPE_SOURCE);
+    if (!NIL_P(callback)) {
+        G_RELATIVE(boxed_source, callback);
+        g_source_set_callback(source,
+                              (GSourceFunc)source_func,
+                              (gpointer)callback,
+                              (GDestroyNotify)NULL);
+    }
+
+    return boxed_source;
 }
 
 static VALUE
@@ -504,16 +555,31 @@ idle_remove(G_GNUC_UNUSED VALUE self, VALUE func)
     return CBOOL2RVAL(g_idle_remove_by_data((gpointer)info));
 }
 
-static VALUE
-child_watch_source_new(G_GNUC_UNUSED VALUE self, VALUE pid)
-{
-    return BOXED2RVAL(g_child_watch_source_new((GPid)NUM2INT(pid)), G_TYPE_SOURCE);
-}
-
 static void
 child_watch_func(GPid pid, gint status, gpointer func)
 {
     rb_funcall((VALUE)func, id_call, 2, INT2NUM((long)pid), INT2NUM(status));
+}
+
+static VALUE
+child_watch_source_new(int argc, VALUE *argv, G_GNUC_UNUSED VALUE self)
+{
+    VALUE pid, callback;
+
+    rb_scan_args(argc, argv, "10&", &pid, &callback);
+
+    GSource *source = g_child_watch_source_new((GPid)NUM2INT(pid));
+
+    VALUE boxed_source = BOXED2RVAL(source, G_TYPE_SOURCE);
+    if (!NIL_P(callback)) {
+        G_RELATIVE(boxed_source, callback);
+        g_source_set_callback(source,
+                              (GSourceFunc)child_watch_func,
+                              (gpointer)callback,
+                              (GDestroyNotify)NULL);
+    }
+
+    return boxed_source;
 }
 
 static VALUE
@@ -574,19 +640,19 @@ Init_glib_main_context(void)
 #ifdef HAVE_G_MAIN_DEPTH
     RG_DEF_SMETHOD(depth, 0);
 #endif
-    rbg_define_singleton_method(timeout, "source_new", timeout_source_new, 1);
+    rbg_define_singleton_method(timeout, "source_new", timeout_source_new, -1);
 #if GLIB_CHECK_VERSION(2,14,0)
-    rbg_define_singleton_method(timeout, "source_new_seconds", timeout_source_new_seconds, 1);
+    rbg_define_singleton_method(timeout, "source_new_seconds", timeout_source_new_seconds, -1);
 #endif
     rbg_define_singleton_method(timeout, "add", timeout_add, -1);
 #if GLIB_CHECK_VERSION(2,14,0)
     rbg_define_singleton_method(timeout, "add_seconds", timeout_add_seconds, -1);
 #endif
-    rbg_define_singleton_method(idle, "source_new", idle_source_new, 0);
+    rbg_define_singleton_method(idle, "source_new", idle_source_new, -1);
     rbg_define_singleton_method(idle, "add", idle_add, -1);
     rbg_define_singleton_method(idle, "remove", idle_remove, 1);
 
-    rbg_define_singleton_method(child_watch, "source_new", child_watch_source_new, 1);
+    rbg_define_singleton_method(child_watch, "source_new", child_watch_source_new, -1);
     rbg_define_singleton_method(child_watch, "add", child_watch_add, 1);
 
     default_poll_func = g_main_context_get_poll_func(NULL);
